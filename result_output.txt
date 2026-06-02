@@ -217,7 +217,7 @@ STRICT WARNING:
 This section does NOT load the real trained PhyloGFN checkpoint.
 encoded_trees and summary_token below are simulated with torch.randn.
 It only explains: pair representation -> MLP -> logits -> softmax -> selected action.
-The real proof must come from the patches printed at the end of this file.
+
 
 Simulated encoded_trees shape: torch.Size([4, 128])
 Simulated summary_token shape: torch.Size([128])
