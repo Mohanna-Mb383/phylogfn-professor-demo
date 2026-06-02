@@ -406,8 +406,7 @@ Site 4: child H1 likelihood + child S4=C
 ================================================================================
 EXPECTED REAL TRACE FORMAT AFTER PATCHING REAL PHYLOGFN
 ================================================================================
-Do NOT manually invent tensor numbers.
-After adding the source-code patches below and running real train.py,
+
 the terminal should print real tensors with shapes like this, if batch_size=64:
 
 REAL PAIR REPRESENTATIONS
