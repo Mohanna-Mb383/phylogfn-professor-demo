@@ -5,7 +5,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from scipy.linalg import expm
 
+# Set clean printing options
 np.set_printoptions(precision=4, suppress=True)
+torch.set_printoptions(precision=4, sci_mode=False, edgeitems=4)
 torch.manual_seed(42)
 
 DNA = ["A", "C", "G", "T"]
@@ -22,7 +24,7 @@ MAP = {
 # HELPER FUNCTIONS & GLOBAL CLASSES
 # ==========================================================
 def seq2array(seq):
-    return np.array([MAP[x] for x in seq], dtype=float)
+    return np.array([MAP[x] for x in seq], dtype=np.float32)
 
 def jc_Q():
     Q = np.ones((4, 4)) / 3.0
@@ -48,9 +50,13 @@ def section(title):
 def explain_tensor(name, tensor, meaning, role):
     print(f"\n{name}")
     print("Meaning:", meaning)
-    print("Shape:", tensor.shape if hasattr(tensor, 'shape') else "Scalar/Primitive")
+    # Safely extract exact PyTorch or Numpy shapes
+    print("Shape:", tensor.shape if hasattr(tensor, 'shape') else type(tensor))
     print("Role:", role)
-    print(tensor)
+    if isinstance(tensor, torch.Tensor):
+        print(tensor.detach().numpy())
+    else:
+        print(tensor)
 
 class SAMlp(nn.Module):
     def __init__(self, in_features, hidden_features, out_features, with_bias=True):
@@ -190,17 +196,31 @@ e_dict = {
 g_tensors = []
 for (a, b) in actions:
     combined_tree_rep = e_dict[a] + e_dict[b]
+    # STRICT ADHERENCE: Global first (128), Local second (128)
     g_ij = torch.cat([summary_token, combined_tree_rep], dim=0) 
     g_tensors.append(g_ij)
 
 g_batch = torch.stack(g_tensors)
 
+print("\n[THE CANONICAL G_ij FORMULA]")
+print("Formula: G_ij = [e_s ; e_i + e_j]")
+print(" - e_s (128 features): Global summary token (Order-equivariant)")
+print(" - e_i + e_j (128 features): Local candidate tree sum (Permutation-invariant)")
+print(" - Total: 128 + 128 = 256 Features per action.\n")
+
+# PROOF OF EXACT TENSOR DIMENSIONS
+G_S1S2 = g_batch[0]
 explain_tensor(
     "G_S1S2 (Action 1 Canonical Vector)",
-    g_batch[0][:5].tolist() + ["..."] + g_batch[0][128:133].tolist() + ["..."],
+    G_S1S2,  # PASSING THE REAL PYTORCH TENSOR HERE
     "The 256-D feature vector representing the decision to merge S1 and S2.",
     "Formula: G_ij = [e_s ; e_i + e_j]. Indices 0-127 hold Global token. Indices 128-255 hold Local sum."
 )
+
+print("\n[VERIFYING THE FEATURE DECOMPOSITION]")
+print(f"Is G_S1S2 exactly 256 dimensions long?      -> {len(G_S1S2) == 256}")
+print(f"Do indices 0-127 exactly match e_s?       -> {torch.equal(G_S1S2[:128], summary_token)}")
+print(f"Do indices 128-255 exactly match e_local? -> {torch.equal(G_S1S2[128:], e_dict['S1'] + e_dict['S2'])}")
 
 # ==========================================================
 # EXPLANATION — FORWARD POLICY & THE "WHY"
