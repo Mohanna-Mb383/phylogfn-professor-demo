@@ -674,22 +674,10 @@ F_U  = felsenstein_merge_step(F_H1, F_S4, P_H1, P_S4)
 explain_tensor(
     "F_U — Felsenstein partial likelihood for ancestor U = merge(H1, S4)",
     np.round(F_U, 4),
-  "H1 and S4 are joined",
-"to make a new ancestor U.",
-
-"Equation 1 uses",
-"F_H1 and F_S4",
-"with their transition matrices",
-
-"to compute F_U.",
-
-"This continues",
-"the Felsenstein calculation",
-
-"and moves one step",
-"closer to the root."
+    "H1 and S4 are joined to make a new ancestor U.",
+    "Equation 1 uses F_H1 and F_S4 with their transition matrices to compute F_U. "
+    "This continues the Felsenstein calculation and moves one step closer to the root."
 )
-
 # ==========================================================
 # FINAL CONCEPTUAL MAP SUMMARY
 # ==========================================================
