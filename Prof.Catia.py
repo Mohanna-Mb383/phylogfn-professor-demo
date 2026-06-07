@@ -105,7 +105,7 @@ This script shows how PhyloGFN works and follows the steps and equations
 from the paper. It is not made to reproduce the paper's final numerical
 results.
 """)
-
+```
 DNA
 → Embedding
 → Transformer
@@ -158,20 +158,36 @@ For cgMLST (Core Genome), each locus needs its own rate matrix Q_i and scaler μ
 # EXPLANATION — ACTION SPACE & TREE CONSTRUCTION
 # ==========================================================
 section("EXPLANATION — ACTION SPACE & TREE CONSTRUCTION")
-print("""1. Action Space Definition
-In PhyloGFN the state is a set of disjoint rooted trees. At any non-terminal state with
-l > 1 trees, one transition = two parts:
-  • Tree Action (topological merge): choose which two subtrees to join.
-    There are C(l,2) choices; l shrinks by 1 each step.
-  • Edge Action (branch lengths): the Edge MLP jointly samples branch lengths (t1, t2)
-    from a discrete 50×50 bin grid (multinomial) or a Gaussian mixture (continuous).
+print("""1. Action Space
+
+In PhyloGFN, a state is a group of separate rooted trees.
+
+If there is more than one tree (l > 1), one step has two parts:
+
+  • Tree Action:
+    Choose two trees and join them into one tree.
+    There are C(l,2) possible choices.
+    After the merge, the number of trees becomes l - 1.
+
+  • Edge Action:
+    The Edge MLP chooses two branch lengths (t1, t2).
+    It samples them from a 50×50 grid or from a continuous distribution.
+
 
 2. Tree Construction Process (bottom-up MDP)
-  ST0 : n disconnected leaf nodes (one per sequence).
-  Each step: merge two roots → new internal node reduces tree count by 1.
-  After n−1 steps: one rooted tree remains.
-  Because Jukes-Cantor is time-reversible the root is dropped, yielding an
-  unrooted bifurcating tree.""")
+  ST0 starts with n separate leaf nodes.
+Each leaf node comes from one sequence.
+
+At each step:
+  • Choose two root nodes.
+  • Merge them into one new internal node.
+  • The number of trees goes down by 1.
+
+After n-1 steps:
+  • Only one rooted tree is left.
+
+The Jukes-Cantor model is time-reversible, so the root is removed.
+The final result is an unrooted bifurcating tree.""")
 
 # ==========================================================
 # STEP 2 — THE TOPOLOGICAL ACTION SPACE
@@ -239,26 +255,94 @@ DNA
 # ==========================================================
 section("STEP 3 — GENERATING CANONICAL G_ij VECTORS (Forward Policy Input)")
 
+```python
 print("""
 [WHAT IS G_ij?]
-G_ij is the feature vector the Forward Policy uses to score the action "merge tree i with
-tree j". It is constructed by concatenating two parts:
 
-  G_ij  =  [ e_s  ;  e_i + e_j ]        (Appendix D, PhyloGFN paper)
+G_ij is the vector
 
-  • e_s      (indices   0–127, 128 features): Global summary token produced by the
-              Transformer. It encodes the *entire current state* ST0 in an
-              order-equivariant way (the summary token attends to all trees at once).
+used by the Forward Policy
 
-  • e_i+e_j  (indices 128–255, 128 features): Elementwise sum of the two candidate
-              tree embeddings. Summing (instead of concatenating) keeps G_ij
-              permutation-invariant: merge(S1,S2) = merge(S2,S1).
+to score the action
 
-  Total: 128 + 128 = 256 features per candidate action.
+"merge tree i with tree j".
 
-All six G_ij vectors are stacked into a (6, 256) batch and fed to SAMlp, which maps
-each to a scalar logit. Softmax over the 6 logits gives P_F(a | ST0).
+
+G_ij = [ e_s ; e_i + e_j ]
+
+
+• e_s
+
+  indices 0–127
+
+  128 features
+
+  It is the global
+  summary vector.
+
+  It contains
+  information about
+  the whole state ST0.
+
+
+• e_i + e_j
+
+  indices 128–255
+
+  128 features
+
+  It is the sum
+
+  of the two
+  candidate tree
+  embeddings.
+
+  We use the sum
+
+  so that
+
+  merge(S1,S2)
+
+  is the same as
+
+  merge(S2,S1).
+
+
+Total:
+
+128 + 128
+
+=
+
+256 features
+
+
+There are
+
+6 possible G_ij vectors.
+
+They are stacked
+
+into one
+
+(6,256) batch.
+
+SAMlp gives
+
+one logit
+
+for each G_ij.
+
+Softmax changes
+
+the 6 logits
+
+into
+
+P_F(a | ST0).
 """)
+```
+
 
 embedding_size = 128
 input_size     = 16      # 4 sites × 4 DNA states (flattened one-hot)
@@ -308,14 +392,11 @@ Global state representation e_s.
 Indices 128–255:
 Local candidate-pair representation e_S1 + e_S2.
 
-The individual numerical values do not have a direct biological interpretation.
-Only the complete vector is used by the neural network.
-
-SAMlp processes this 256-dimensional representation and learns how combinations
-of these features correlate with high-reward phylogenetic constructions.
-
-The tensor is printed only to verify the exact structure of G_ij and to
-demonstrate that the implementation matches the mathematical definition:
+The numbers do not have a direct biological meaning.
+The neural network uses the whole 256-dimensional vector.
+SAMlp takes this vector and gives one score for the candidate merge.
+This tensor is printed only to show the structure of G_ij. 
+It also shows that the code follows the mathematical formula:
 
 G_ij = [e_s ; e_i + e_j]
 """)
@@ -339,18 +420,62 @@ print(f"  Indices 128–255 match e_S1 + e_S2 exactly?-> {torch.equal(G_S1S2[128
 section("EXPLANATION — FORWARD POLICY & THE 'WHY'")
 print("""
 3. Forward Policy vs. Random Actions
-  • Learned P_F: SAMlp maps each G_ij to a scalar logit. Softmax converts the 6 logits into
-    a probability distribution. The generator *samples* from this distribution rather than
-    always taking the greedy maximum, which is essential for exploration.
-  • ε-greedy exploration: during training PhyloGFN occasionally samples a uniformly random
-    action with probability ε to prevent mode collapse.
+
+• Learned P_F
+
+  SAMlp gives one score
+  to each G_ij.
+
+  Softmax changes
+  the 6 scores into
+  probabilities.
+
+  The model samples
+  one action from
+  these probabilities.
+
+  It does not always
+  choose the highest score.
+
+• Random Actions
+
+  During training,
+
+  the model sometimes
+  chooses a random action.
+
+  This helps the model
+  explore more trees
+  and find better solutions.
+
 
 4. Why GFlowNet?
-  The space of unrooted bifurcating trees is super-exponential — (2n−5)!! for n leaves —
-  so exhaustive search is impossible. The GFlowNet objective trains P_F to generate trees
-  proportionally to their posterior reward R(z,b) = P(Y|z,b)·P(b). This amortised
-  posterior sampler efficiently discovers diverse high-reward trees, which is biologically
-  essential for computing branch support and confidence intervals.""")
+
+There are too many
+possible trees.
+
+It is not possible
+to check every tree.
+
+GFlowNet learns to
+generate trees
+with probability
+based on their reward
+
+R(z,b) = P(Y|z,b) · P(b)
+
+Trees with higher reward
+are generated more often.
+
+This helps the model
+find many good trees.
+
+These trees are useful
+
+for branch support
+
+and confidence intervals.
+""")
 
 # ==========================================================
 # STEP 4 — LOGITS, SOFTMAX, AND GFLOWNET SAMPLING
@@ -473,14 +598,49 @@ section("QUESTION 2B — NEXT TRANSITION: MERGE(H1, S4)")
 
 print("""
 State ST1 contains three disjoint trees: H1, S2/S3 (whichever was not chosen), and the
-remaining leaf. For the professor's concrete example we now perform merge(H1, S4).
+remaining leaf.In this example, we now merge H1 and S4.
 
-The procedure is identical to Question 2A but the left child is H1 (an internal node
-whose Felsenstein likelihood F_H1 was just computed) instead of a raw leaf.
+So the next action is:
 
-H1's embedding e_H1 is obtained by projecting F_H1.flatten() through seq_emb
-(the same linear layer used for leaves). This is how the Transformer reincorporates
-newly formed ancestors back into the state representation.
+merge(H1, S4).
+
+The steps are the same
+as in Question 2A.
+
+The difference is:
+
+The left child is H1,
+not a leaf sequence.
+
+H1 is an internal node.
+
+Its Felsenstein likelihood
+F_H1 was already computed.
+
+Now we use F_H1
+instead of a leaf
+to compute the next parent node.
+
+We already have F_H1.
+
+First, F_H1 is changed
+into one long vector.
+
+Then this vector
+goes through seq_emb.
+
+seq_emb is the same
+linear layer used
+for the leaf sequences.
+
+The result is e_H1.
+
+Now H1 has an embedding
+like the other trees.
+
+The Transformer can use H1
+again as part of the
+current state.
 
 In a real trained model, the Transformer would be re-run on ST1 to obtain a fresh
 summary token. Here we use torch.randn to simulate that token  [SIMULATED].
@@ -517,9 +677,20 @@ F_U  = felsenstein_merge_step(F_H1, F_S4, P_H1, P_S4)
 explain_tensor(
     "F_U — Felsenstein partial likelihood for ancestor U = merge(H1, S4)",
     np.round(F_U, 4),
-    "U is the new ancestor joining H1 and S4.",
-    "Computed by applying Equation 1 to F_H1 and F_S4 with their respective "
-    "transition matrices. This continues the recursive likelihood propagation toward the root."
+  "H1 and S4 are joined",
+"to make a new ancestor U.",
+
+"Equation 1 uses",
+"F_H1 and F_S4",
+"with their transition matrices",
+
+"to compute F_U.",
+
+"This continues",
+"the Felsenstein calculation",
+
+"and moves one step",
+"closer to the root."
 )
 
 # ==========================================================
@@ -531,10 +702,36 @@ Step 1  Biological Sequences → One-Hot Encoding
         Raw DNA (Σ={A,C,G,T}) is converted to binary indicator matrices F_leaf ∈ {0,1}^(m×4).
 
 Step 2  One-Hot Leaves → Transformer Embeddings
-        seq_emb (linear) projects each (16,)-flat leaf to a 128-D vector.
-        A Transformer Encoder contextualises all leaf embeddings jointly, producing:
-          • e_s        : 128-D global summary token (encodes full state ST0).
-          • e_S1..e_S4 : 128-D individual tree embeddings.
+        Each leaf is first
+changed into one
+16-dimensional vector.
+
+seq_emb changes
+this vector into
+a 128-dimensional vector.
+
+Then all leaf vectors
+go into the
+Transformer Encoder.
+
+The Transformer
+creates:
+
+• e_s
+  A 128-dimensional
+  global summary vector.
+
+  It contains information
+  about the whole state ST0.
+
+• e_S1, e_S2,
+  e_S3, e_S4
+
+  These are
+  128-dimensional vectors.
+
+  Each one represents
+  one tree.
 
 Step 3  Embeddings → G_ij Feature Vectors
         For each candidate pair (i,j): G_ij = [e_s ; e_i + e_j]  ∈ R^256.
@@ -563,8 +760,35 @@ Step 8  Terminal State → Reward
         The Trajectory Balance (TB) loss uses R to update all network weights.
 
 Step 9  Reward → Proportional Tree Generation
-        After training, the GFlowNet generates each tree topology z with branch lengths b
-        with probability exactly proportional to R(z,b), giving a correct posterior sample.
-        The rooted tree is then unrooted (Jukes-Cantor reversibility) to yield the final
-        unrooted bifurcating phylogenetic tree.
+      After training,
+
+the GFlowNet can
+generate many trees.
+
+Each tree has
+
+• a topology z
+• branch lengths b
+
+Trees with a higher
+reward R(z,b)
+
+have a higher chance
+to be generated.
+
+The final tree
+is first rooted.
+
+Then the root
+is removed
+
+because the
+Jukes-Cantor model
+is time-reversible.
+
+The result is
+
+an unrooted
+bifurcating
+phylogenetic tree.
 """)
