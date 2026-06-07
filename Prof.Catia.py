@@ -93,7 +93,7 @@ class EdgeMLP(nn.Module):
 # ==========================================================
 # IMPORTANT LIMITATION OF THIS DEMONSTRATION
 # ==========================================================
-```python
+
 section("IMPORTANT NOTE")
 print("""
 No trained PhyloGFN model is used in this demo.
@@ -104,8 +104,7 @@ are [SIMULATED] with random values.
 This script shows how PhyloGFN works and follows the steps and equations
 from the paper. It is not made to reproduce the paper's final numerical
 results.
-""")
-```
+
 DNA
 → Embedding
 → Transformer
@@ -255,7 +254,7 @@ DNA
 # ==========================================================
 section("STEP 3 — GENERATING CANONICAL G_ij VECTORS (Forward Policy Input)")
 
-```python
+
 print("""
 [WHAT IS G_ij?]
 
@@ -341,8 +340,6 @@ into
 
 P_F(a | ST0).
 """)
-```
-
 
 embedding_size = 128
 input_size     = 16      # 4 sites × 4 DNA states (flattened one-hot)
