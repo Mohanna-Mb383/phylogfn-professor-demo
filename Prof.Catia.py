@@ -30,20 +30,90 @@ def jc_Q():
     np.fill_diagonal(Q, -1.0)
     return Q
 
-def felsenstein_merge_step(F_left, F_right, P_left, P_right):
+def felsenstein_merge_step(F_left, F_right, P_left, P_right, verbose=False,
+                            left_name="left", right_name="right", parent_name="parent"):
     """
-    Implements Equation 1 from the PhyloGFN paper.
-    F_left, F_right : (n_sites, 4) partial likelihood matrices of child nodes.
-    P_left, P_right : (4, 4) Jukes-Cantor transition matrices for each branch.
-    Returns F_parent : (n_sites, 4) partial likelihood for the new ancestor.
-    """
-    n_sites = F_left.shape[0]          # F_left.shape is (n_sites, 4); shape[0] = n_sites
+This function uses Equation 1
+from the PhyloGFN paper.
+
+It can also show the calculation
+site by site.
+
+F_left and F_right
+are the likelihood matrices
+of the two child nodes.
+
+Their shape is:
+
+(n_sites, 4)
+
+P_left and P_right
+are the Jukes-Cantor
+transition matrices
+for the two branches.
+
+Their shape is:
+
+(4, 4)
+
+The function returns F_parent.
+
+F_parent is the likelihood matrix
+for the new ancestor node.
+
+Its shape is:
+
+(n_sites, 4)
+"""
+
+    states = ["A", "C", "G", "T"]
+    n_sites = F_left.shape[0]
     F_parent = np.zeros((n_sites, 4))
+
+    if verbose:
+        print(f"\n{'─'*80}")
+        print(f"SITE-BY-SITE FELSENSTEIN TRACE  (parent = {parent_name}, "
+              f"left = {left_name}, right = {right_name})")
+        print(f"{'─'*80}")
+        print("Formula (Equation 1):")
+        print(f"  F_{parent_name}[site, a] = "
+              f"[Σ_b  P_left[a,b]  · F_{left_name}[site,b]]")
+        print(f"                       × [Σ_c  P_right[a,c] · F_{right_name}[site,c]]")
+        print()
+
     for site in range(n_sites):
-        for parent_state in range(4):
-            left_prob  = np.sum(P_left[parent_state,  :] * F_left[site,  :])
-            right_prob = np.sum(P_right[parent_state, :] * F_right[site, :])
-            F_parent[site, parent_state] = left_prob * right_prob
+        for ps_idx, parent_state in enumerate(range(4)):
+            left_sum  = np.sum(P_left[parent_state,  :] * F_left[site,  :])
+            right_sum = np.sum(P_right[parent_state, :] * F_right[site, :])
+            F_parent[site, parent_state] = left_sum * right_sum
+
+        if verbose:
+            left_obs  = states[np.argmax(F_left[site])]  if F_left[site].max()  == 1 else "mixed"
+            right_obs = states[np.argmax(F_right[site])] if F_right[site].max() == 1 else "mixed"
+            print(f"  Site {site+1}:  {left_name}={left_obs}  {right_name}={right_obs}")
+
+            ps = 0
+            ps_label = "A"
+            lp = P_left[ps,  :] * F_left[site,  :]
+            rp = P_right[ps, :] * F_right[site, :]
+            ls = lp.sum()
+            rs = rp.sum()
+            print(f"    Worked example — parent_state = {ps_label}:")
+            print(f"      P_left[{ps_label},:]  · F_{left_name}[site,:]  "
+                  f"= {np.round(P_left[ps,:],4)} · {F_left[site,:]}")
+            print(f"        = {np.round(lp,4)}  →  left_sum  = {ls:.6f}")
+            print(f"      P_right[{ps_label},:] · F_{right_name}[site,:] "
+                  f"= {np.round(P_right[ps,:],4)} · {F_right[site,:]}")
+            print(f"        = {np.round(rp,4)}  →  right_sum = {rs:.6f}")
+            print(f"      F_{parent_name}[site={site+1}, {ps_label}] = {ls:.6f} × {rs:.6f} "
+                  f"= {ls*rs:.6f}")
+            print(f"    Full row F_{parent_name}[site={site+1}, :] = {np.round(F_parent[site],6)}")
+            print(f"    Biological meaning: F_{parent_name}[site={site+1}, A] = {F_parent[site,0]:.4f} "
+                  f"means there is a {F_parent[site,0]*100:.2f}% probability that "
+                  f"site {site+1} has state A at ancestor {parent_name}, given the observed "
+                  f"nucleotides below ({left_name}={left_obs}, {right_name}={right_obs}).")
+            print()
+
     return F_parent
 
 def section(title):
@@ -61,7 +131,6 @@ def explain_tensor(name, tensor, meaning, role):
     else:
         print(tensor)
 
-# SAMlp and EdgeMLP are each defined ONCE here.
 class SAMlp(nn.Module):
     """Maps a G_ij feature vector (256-D) to a scalar logit l_ij."""
     def __init__(self, in_features=256, hidden_features=256, out_features=1, with_bias=True):
@@ -91,38 +160,130 @@ class EdgeMLP(nn.Module):
         return self.fc(x)
 
 # ==========================================================
+# SIMULATED vs DETERMINISTIC — OUTPUT LEGEND
+# ==========================================================
+section("OUTPUT LEGEND: SIMULATED vs DETERMINISTIC VALUES")
+print("""
+This script shows
+the PhyloGFN pipeline.
+
+It uses random
+untrained network weights.
+
+There are two types
+of printed values:
+
+[SIMULATED]
+
+This value comes from
+a random untrained
+neural network.
+
+In a trained model,
+this value would be meaningful.
+
+Here, it is only
+an example.
+
+
+[DETERMINISTIC]
+
+This value is computed
+from fixed inputs.
+
+For example:
+
+one-hot encoding,
+matrix exponential,
+or Felsenstein recursion.
+
+These values are exact
+and reproducible.
+
+Every printed number
+has one of these labels.
+""")
+
+# ==========================================================
 # IMPORTANT LIMITATION OF THIS DEMONSTRATION
 # ==========================================================
+section("IMPORTANT NOTE: NO TRAINED MODEL IS USED")
 
-section("IMPORTANT NOTE")
 print("""
-No trained PhyloGFN model is used in this demo.
+This script shows
+the PhyloGFN pipeline.
 
-All Transformer outputs, logits, sampled actions, and branch lengths
-are [SIMULATED] with random values.
+No trained model
+is used.
 
-This script shows how PhyloGFN works and follows the steps and equations
-from the paper. It is not made to reproduce the paper's final numerical
-results.
+All neural network
+outputs are
+
+[SIMULATED]
+
+These include:
+
+• Transformer outputs
+• SAMlp logits
+• EdgeMLP logits
+• sampled actions
+• sampled branch lengths
+
+They are made
+with random weights.
+
+
+The following parts
+are
+
+[DETERMINISTIC]
+
+• Felsenstein pruning
+• Jukes-Cantor matrices
+• reward computation
+
+These follow
+the paper exactly.
+
+
+Pipeline:
 
 DNA
-→ Embedding
-→ Transformer
-→ G_ij Construction
-→ Forward Policy
-→ Edge Policy
-→ Felsenstein Likelihood
-→ Reward Computation
 
-Therefore, the model structure, tensor sizes, mathematical equations, and data flow follow the paper, while the neural network values are only [SIMULATED] examples.
+↓
+
+Embedding
+
+↓
+
+Transformer
+
+↓
+
+G_ij Construction
+
+↓
+
+Forward Policy
+
+↓
+
+Edge Policy
+
+↓
+
+Felsenstein Likelihood
+
+↓
+
+Reward Computation
 """)
+
+
 
 # ==========================================================
 # STEP 0 & 1 — INPUT SEQUENCES & ONE-HOT ENCODING
 # ==========================================================
-# Naming convention (strictly observed throughout):
-#   S1, S2, S3, S4  →  biological leaf sequences (fixed labels).
-#   ST0, ST1, ST2   →  MDP states (number of disjoint trees shrinks at each step).
 S = {
     "S1": "AATG",
     "S2": "AATT",
@@ -131,200 +292,845 @@ S = {
 }
 
 section("STEP 0 & 1 — INITIAL STATE (ST0) & ONE-HOT ENCODING")
-print("ST0 = Initial State. ST0 contains four disjoint leaf nodes: S1, S2, S3, S4.")
-print("S1–S4 are the biological sequences. ST0 is the MDP state (not a sequence label).\n")
+print("""
+ST0 is the first state.
+
+It has four separate
+leaf nodes:
+
+S1, S2, S3, and S4.
+
+Each leaf contains
+one DNA sequence.
+
+One-hot encoding
+changes each DNA letter
+
+(A, C, G, T)
+
+into a vector
+with four values.
+
+This gives
+
+a (4 × 4) matrix
+
+for each sequence.
+
+This matrix is
+the first Felsenstein
+likelihood matrix.
+
+The observed DNA state
+
+has probability 1.
+
+All other states
+
+have probability 0.
+""")
 
 encoded = {name: seq2array(seq) for name, seq in S.items()}
 
 explain_tensor(
-    "F_S1 (example encoded leaf)",
+    "F_S1 — [DETERMINISTIC] encoded leaf",
     encoded["S1"],
     "One-hot encoded matrix for sequence S1 ('AATG').",
     "Rows = sites (positions), Cols = DNA states {A,C,G,T}. "
     "Serves as the initial Felsenstein partial likelihood for leaf S1."
 )
 
-print("\n" + "-" * 80)
-print("THEORETICAL CONTEXT: DNA vs MLST")
-print("-" * 80)
-print("""In standard PhyloGFN, the initial feature for leaf u at site i is f_u^i ∈ [0,1]^4.
-For MLST (Multi-Locus Sequence Typing), the alphabet shifts to allele IDs (1..K).
-The vocabulary size expands from 4 to K, changing the state space from m×4 to m×K.
-For cgMLST (Core Genome), each locus needs its own rate matrix Q_i and scaler μ_i:
-   P_i(t) = exp(Q_i * μ_i * t).""")
-
-# ==========================================================
-# EXPLANATION — ACTION SPACE & TREE CONSTRUCTION
-# ==========================================================
-section("EXPLANATION — ACTION SPACE & TREE CONSTRUCTION")
-print("""1. Action Space
-
-In PhyloGFN, a state is a group of separate rooted trees.
-
-If there is more than one tree (l > 1), one step has two parts:
-
-  • Tree Action:
-    Choose two trees and join them into one tree.
-    There are C(l,2) possible choices.
-    After the merge, the number of trees becomes l - 1.
-
-  • Edge Action:
-    The Edge MLP chooses two branch lengths (t1, t2).
-    It samples them from a 50×50 grid or from a continuous distribution.
-
-
-2. Tree Construction Process (bottom-up MDP)
-  ST0 starts with n separate leaf nodes.
-Each leaf node comes from one sequence.
-
-At each step:
-  • Choose two root nodes.
-  • Merge them into one new internal node.
-  • The number of trees goes down by 1.
-
-After n-1 steps:
-  • Only one rooted tree is left.
-
-The Jukes-Cantor model is time-reversible, so the root is removed.
-The final result is an unrooted bifurcating tree.""")
-
 # ==========================================================
 # STEP 2 — THE TOPOLOGICAL ACTION SPACE
 # ==========================================================
 section("STEP 2 — THE TOPOLOGICAL ACTION SPACE")
 
-ST0 = list(S.keys())           # ['S1', 'S2', 'S3', 'S4']
-actions = list(itertools.combinations(ST0, 2))   # C(4,2) = 6 pairs
+ST0 = list(S.keys())
+actions = list(itertools.combinations(ST0, 2))
 
 print(f"Number of trees in ST0 : {len(ST0)}")
 print(f"C(4,2) = {len(actions)} candidate merge actions:\n")
 for i, (a, b) in enumerate(actions, start=1):
     print(f"  a{i}: merge({a}, {b})")
-section("MATHEMATICAL DERIVATION OF G_ij")
-print("""
-The Forward Policy does not operate directly on raw DNA sequences.
 
-For each leaf sequence S_k:
-
-DNA sequence
-→ One-Hot Encoding
-→ Flattening (4×4 → 16-D)
-→ Linear Projection (seq_emb : R^16 → R^128)
-→ Initial Tree Embedding
-
-The embeddings of all trees in the current state ST0 are then passed through a
-Transformer Encoder.
-
-Transformer Input:
-[h_s ; e_S1 ; e_S2 ; e_S3 ; e_S4]
-
-where:
-h_s  = learnable summary query token
-e_Sk = embedding of tree S_k
-
-The Transformer outputs:
-[e_s ; e'_S1 ; e'_S2 ; e'_S3 ; e'_S4]
-
-where:
-e_s   = global summary token encoding the entire state ST0
-e'_Si = contextualized embedding of tree i
-
-For a candidate merge action (i,j), the canonical state-action representation is:
-
-G_ij = [e_s ; e'_i + e'_j]
-
-The first 128 dimensions encode global context.
-The last 128 dimensions encode the candidate pair.
-
-Thus:
-
-DNA
-→ One-Hot
-→ seq_emb
-→ Transformer
-→ e_s, e_i, e_j
-→ G_ij
-→ SAMlp
-→ logits
-→ softmax
-→ P_F(a | ST0)
-""")
 # ==========================================================
 # STEP 3 — TRANSFORMER EMBEDDINGS & CANONICAL G_ij VECTORS
 # ==========================================================
 section("STEP 3 — GENERATING CANONICAL G_ij VECTORS (Forward Policy Input)")
 
+embedding_size = 128
+input_size     = 16
+
+seq_emb       = nn.Linear(input_size, embedding_size, bias=False)
+encoder_layer = nn.TransformerEncoderLayer(d_model=embedding_size, nhead=4, batch_first=True)
+transformer   = nn.TransformerEncoder(encoder_layer, num_layers=1)
+
+tree_embeddings_list = []
+for name in ST0:
+    y_i = torch.tensor(encoded[name].flatten(), dtype=torch.float32)
+    tree_embeddings_list.append(seq_emb(y_i))
+
+encoded_trees     = torch.stack(tree_embeddings_list).unsqueeze(0)   # (1, 4, 128)
+h_s               = torch.randn(1, 1, embedding_size)
+transformer_input = torch.cat([h_s, encoded_trees], dim=1)            # (1, 5, 128)
+
+with torch.no_grad():
+    transformer_output = transformer(transformer_input)
+
+summary_token = transformer_output[0, 0, :]   # [SIMULATED]
+e_dict = {
+    "S1": transformer_output[0, 1, :],         # [SIMULATED]
+    "S2": transformer_output[0, 2, :],         # [SIMULATED]
+    "S3": transformer_output[0, 3, :],         # [SIMULATED]
+    "S4": transformer_output[0, 4, :],         # [SIMULATED]
+}
+
+g_tensors = []
+for (a, b) in actions:
+    e_local = e_dict[a] + e_dict[b]
+    g_ij    = torch.cat([summary_token, e_local], dim=0)
+    g_tensors.append(g_ij)
+
+g_batch = torch.stack(g_tensors)    # (6, 256)
+G_S1S2  = g_batch[0]
 
 print("""
-[WHAT IS G_ij?]
+[SIMULATED] Transformer embeddings are produced by a randomly initialised
+Transformer encoder. In a trained model these would carry meaningful
+phylogenetic context; here they are arbitrary 128-dimensional vectors.
 
-G_ij is the vector
+Each G_ij feature vector is formed as:
 
-used by the Forward Policy
+  G_ij = [e_s ; e_i + e_j]   Shape: (256,) = 128 global + 128 local
 
-to score the action
+  Indices   0–127  →  e_s          : global summary of the current MDP state
+  Indices 128–255  →  e_i + e_j    : permutation-invariant encoding of the pair
 
-"merge tree i with tree j".
+The addition e_i + e_j is used instead of concatenation so that merge(S1,S2)
+and merge(S2,S1) produce identical feature vectors, reflecting the fact that
+merging is symmetric (the resulting tree topology is the same either way).
+""")
+print("  [SIMULATED] e_s  (global, indices 0–4):       ", G_S1S2[:5].detach().numpy())
+print("  [SIMULATED] e_S1 + e_S2 (local, idx 128–132): ", G_S1S2[128:133].detach().numpy())
+print(f"\n  Total dimension == 256?                    -> {len(G_S1S2) == 256}")
+print(f"  Indices   0–127 match e_s exactly?         -> {torch.equal(G_S1S2[:128], summary_token)}")
+print(f"  Indices 128–255 match e_S1 + e_S2 exactly? -> {torch.equal(G_S1S2[128:], e_dict['S1'] + e_dict['S2'])}")
+
+# ==========================================================
+# STEP 4 — LOGITS, SOFTMAX, GFLOWNET SAMPLING
+# ==========================================================
+section("STEP 4 — ACTION SCORING & GFLOWNET SAMPLING")
+
+logits_head = SAMlp(in_features=256, hidden_features=256, out_features=1)
+
+print("""
+─────────────────────────────────────────────────────────────────────────────
+SAMlp WHITE-BOX: full forward pass for G_S1S2 (action = merge(S1, S2))
+─────────────────────────────────────────────────────────────────────────────
+
+SAMlp is a two-layer MLP. The complete forward pass for a single pair (i,j) is:
+
+    H    = GELU( G_ij @ W1.T + b1 )      hidden layer   (256-D)
+    l_ij =       H    @ W2.T + b2        output scalar  (1-D)
+
+Learnable parameters (fixed during the forward pass, updated by TB loss):
+  W1  : shape (256, 256)   — maps 256-D input  → 256-D hidden
+  b1  : shape (256,)       — bias of hidden layer
+  W2  : shape (256, 1)     — maps 256-D hidden → 1 scalar
+  b2  : shape (1,)         — bias of output layer
+
+G_ij is the input that changes for every candidate pair; W1, b1, W2, b2 are
+shared across all pairs within one forward pass and are updated across training
+steps by minimising the Trajectory Balance (TB) loss.
+""")
+
+W1 = logits_head.fc1.weight   # (256, 256)
+b1 = logits_head.fc1.bias     # (256,)
+W2 = logits_head.fc2.weight   # (1, 256)
+b2 = logits_head.fc2.bias     # (1,)
+
+print(f"  W1 shape : {tuple(W1.shape)}")
+print(f"  b1 shape : {tuple(b1.shape)}")
+print(f"  W2 shape : {tuple(W2.shape)}")
+print(f"  b2 shape : {tuple(b2.shape)}")
+
+G_in = G_S1S2.detach()
+with torch.no_grad():
+    pre_act = G_in @ W1.T + b1          # (256,)
+    H       = F.gelu(pre_act)           # (256,)
+    l_S1S2  = (H @ W2.T + b2).item()   # scalar
+
+print(f"""
+[SIMULATED] Step-by-step computation for G_S1S2:
+
+  1. pre_act = G_S1S2 @ W1.T + b1
+       shape: ({G_in.shape[0]},) @ ({W1.T.shape[0]},{W1.T.shape[1]}) + ({b1.shape[0]},) → (256,)
+       First 5 values of pre_act : {pre_act[:5].numpy().round(4)}
+
+  2. H = GELU(pre_act)
+       GELU(x) ≈ x·Φ(x)  (smooth approximation to ReLU)
+       First 5 values of H       : {H[:5].numpy().round(4)}
+
+  3. l_S1S2 = H @ W2.T + b2
+       shape: (256,) @ (256,1) + (1,) → scalar
+       l_S1S2 = {l_S1S2:.6f}
+
+Range of l_ij: l_ij is an unbounded real number in (−∞, +∞). It is not a
+probability and has no biological units. A large positive l_ij indicates that
+SAMlp strongly favours this pair; a large negative value means it strongly
+disfavours it. In this [SIMULATED] run l_S1S2 = {l_S1S2:.4f}.
+""")
+
+with torch.no_grad():
+    logits        = logits_head(g_batch).squeeze(-1)   # (6,)
+    probabilities = F.softmax(logits, dim=0)            # (6,)
+
+print("""
+─────────────────────────────────────────────────────────────────────────────
+SOFTMAX FORMULA
+─────────────────────────────────────────────────────────────────────────────
+
+    P_F(a_k | ST0) = exp(l_k) / Σ_{j=1}^{6} exp(l_j)
+
+  • l_k       = scalar logit from SAMlp for action k
+  • exp(l_k)  = un-normalised weight (always positive)
+  • Σ exp(l_j) = normalisation constant (sum over ALL 6 actions)
+
+Softmax changes
+
+the 6 logits
+
+into 6 probabilities.
+
+All probabilities
+
+are greater than 0.
+
+Their sum
+
+is always 1.
+
+The action
+
+with the highest logit
+
+gets the highest probability.
+
+The other actions
+
+still have
+
+a chance
+
+to be selected.
+
+This lets
+
+the model
+
+explore
+
+many different trees.
+
+This is important
+
+for GFlowNet.
+─────────────────────────────────────────────────────────────────────────────
+""")
+
+print("[SIMULATED] Action → logit l_ij → Forward Probability P_F(a | ST0)")
+for idx, (a, b) in enumerate(actions):
+    print(f"  merge({a},{b})  logit = {logits[idx].item():+.4f}   "
+          f"P_F = {probabilities[idx].item()*100:.2f}%")
+
+prob_sum = probabilities.sum().item()
+print(f"\n✓ VERIFICATION — sum of all 6 probabilities = {prob_sum:.6f}  (must equal 1.0000)")
+assert abs(prob_sum - 1.0) < 1e-5, "Softmax probabilities do not sum to 1!"
+print("  Assertion passed: softmax output is a valid probability distribution.\n")
+
+argmax_idx    = torch.argmax(probabilities).item()
+argmax_action = actions[argmax_idx]
+
+sampled_idx   = torch.multinomial(probabilities, num_samples=1).item()
+sampled_action = actions[sampled_idx]
+
+print("""
+─────────────────────────────────────────────────────────────────────────────
+ARGMAX vs STOCHASTIC SAMPLING — concrete comparison
+─────────────────────────────────────────────────────────────────────────────""")
+print(f"  [SIMULATED] argmax would always choose : merge({argmax_action[0]}, {argmax_action[1]})"
+      f"  (P = {probabilities[argmax_idx].item()*100:.2f}%)")
+print(f"  [SIMULATED] sampling actually chose    : merge({sampled_action[0]}, {sampled_action[1]})"
+      f"  (P = {probabilities[sampled_idx].item()*100:.2f}%)")
+print(f"  Same choice this run?                  : {argmax_idx == sampled_idx}")
+
+print("""
+Why sampling
+
+and not argmax?
+
+GFlowNet
+
+does not want
+
+only one tree.
+
+It wants
+
+to learn
+
+many possible trees.
+
+The probability
+
+of each tree
+
+depends on
+
+its reward
+
+R(z,b).
+
+If we use argmax,
+
+the model
+
+always chooses
+
+the best score.
+
+Then it may
+
+find only one tree.
+
+With sampling,
+
+different trees
+
+can be selected.
+
+Trees with
+
+higher reward
+
+are selected
+
+more often.
+
+This helps
+
+the model
+
+explore
+
+the full tree space.
+
+During training,
+
+the Trajectory Balance (TB)
+
+objective learns
+
+this behavior.
+""")
 
 
-G_ij = [ e_s ; e_i + e_j ]
 
+chosen_left, chosen_right = "S1", "S2"
+print(f"FIXED ACTION (professor's example): merge({chosen_left}, {chosen_right})")
+print(f"  ST0 = {{ S1, S2, S3, S4 }}  →  ST1 = {{ H1, S3, S4 }}")
+
+# ==========================================================
+# STEP 5 — JUKES-CANTOR MODEL
+# ==========================================================
+section("STEP 5 — JUKES-CANTOR MODEL: Q MATRIX, P(t), AND BIOLOGICAL MEANING")
+
+Q = jc_Q()
+
+print("""
+─────────────────────────────────────────────────────────────────────────────
+THE JUKES-CANTOR RATE MATRIX Q   [DETERMINISTIC]
+─────────────────────────────────────────────────────────────────────────────
+
+Q is a 4×4 matrix governing instantaneous mutation rates between {A,C,G,T}.
+
+    Q[a,b] = 1/3   for a ≠ b   (rate of mutating FROM state a TO state b)
+    Q[a,a] = −1    (diagonal, ensures rows sum to zero)
+
+The row-sum constraint is required for probability conservation: the master
+equation dP/dt = Q·P must leave total probability equal to one. The diagonal
+entry Q[A,A] = −1 equals minus the sum of all off-diagonal entries in that
+row (1/3 + 1/3 + 1/3 = 1), meaning the total rate of leaving state A is 1.
+""")
+print("[DETERMINISTIC] Q matrix (rows = from-state, cols = to-state):")
+print(Q)
+
+row_sums = Q.sum(axis=1)
+print(f"\n✓ VERIFICATION — row sums of Q: {np.round(row_sums, 10)}")
+print(f"  All row sums ≈ 0?  -> {np.allclose(row_sums, 0.0)}")
+
+print("""
+─────────────────────────────────────────────────────────────────────────────
+TRANSITION MATRIX P(t) = exp(Q·t)   [DETERMINISTIC]
+─────────────────────────────────────────────────────────────────────────────
+
+P(t)[a,b] is the probability that nucleotide b is observed after evolving for
+branch length t, given the ancestor had nucleotide a. The Jukes-Cantor closed
+form is:
+
+    P(t)[same]      = 0.25 + 0.75 · exp(−4t/3)   (stay in same state)
+    P(t)[different] = 0.25 − 0.25 · exp(−4t/3)   (mutate to any other state)
+""")
+
+# ==========================================================
+# STEP 5b — EDGE MLP & BRANCH LENGTHS
+# ==========================================================
+section("STEP 5b — EDGE MLP: SAMPLING BRANCH LENGTHS")
+
+edge_mlp_input = torch.cat([
+    summary_token,
+    e_dict[chosen_left],
+    e_dict[chosen_right]
+], dim=0).unsqueeze(0)
+
+edge_model = EdgeMLP()
+
+with torch.no_grad():
+    edge_logits = edge_model(edge_mlp_input).squeeze()
+    edge_probs  = F.softmax(edge_logits, dim=0)
+
+sampled_bin = torch.multinomial(edge_probs, 1).item()
+t1 = (sampled_bin // 50 + 1) * 0.01
+t2 = (sampled_bin  % 50 + 1) * 0.01
+
+print(f"\n[SIMULATED] EdgeMLP output → sampled bin index : {sampled_bin}")
+print(f"[SIMULATED] Decoded branch lengths : t1 = {t1:.3f}  (branch to {chosen_left})")
+print(f"[SIMULATED]                          t2 = {t2:.3f}  (branch to {chosen_right})")
+
+P1 = expm(Q * t1)
+P2 = expm(Q * t2)
+
+print(f"""
+─────────────────────────────────────────────────────────────────────────────
+[DETERMINISTIC] BIOLOGICAL INTERPRETATION OF P(t) ENTRIES
+─────────────────────────────────────────────────────────────────────────────
+
+Transition matrix P(t1={t1:.3f}) for branch to {chosen_left}:
+""")
+print(np.round(P1, 4))
+
+diag_val    = P1[0, 0]
+offdiag_val = P1[0, 1]
+print(f"""
+  P(t1)[A,A] = {diag_val:.4f}
+    → There is a {diag_val*100:.1f}% probability that nucleotide A remains A
+      after evolving for branch length t1={t1:.3f}.
+
+  P(t1)[A,C] = {offdiag_val:.4f}
+    → There is a {offdiag_val*100:.1f}% probability that nucleotide A mutates to C
+      (equivalently A→G or A→T — all off-diagonal entries are equal in the
+      Jukes-Cantor model) after evolving for branch length t1={t1:.3f}.
+
+  Row sum P(t1)[A,:] = {P1[0,:].sum():.6f}  (must equal 1.0 — verified below)
+""")
+
+print(f"✓ VERIFICATION — row sums of P(t1): {np.round(P1.sum(axis=1), 6)}")
+print(f"  All row sums ≈ 1?  -> {np.allclose(P1.sum(axis=1), 1.0)}\n")
+
+print(f"[DETERMINISTIC] Transition matrix P(t2={t2:.3f}) for branch to {chosen_right}:")
+print(np.round(P2, 4))
+print(f"\n  P(t2)[A,A] = {P2[0,0]:.4f}  → {P2[0,0]*100:.1f}% chance A stays A")
+print(f"  P(t2)[A,C] = {P2[0,1]:.4f}  → {P2[0,1]*100:.1f}% chance A mutates to C")
+print(f"\n✓ VERIFICATION — row sums of P(t2): {np.round(P2.sum(axis=1), 6)}")
+
+lam = 10.0
+print(f"""
+─────────────────────────────────────────────────────────────────────────────
+[DETERMINISTIC] EXPONENTIAL PRIOR ON BRANCH LENGTHS
+─────────────────────────────────────────────────────────────────────────────
+
+  P(t) = λ · exp(−λ · t)   with  λ = {lam:.0f}
+
+  P(t1={t1:.3f}) = {lam:.0f} · exp(−{lam:.0f} × {t1:.3f}) = {lam * np.exp(-lam*t1):.6f}
+  P(t2={t2:.3f}) = {lam:.0f} · exp(−{lam:.0f} × {t2:.3f}) = {lam * np.exp(-lam*t2):.6f}
+
+  Biological meaning: long branches (large t) are exponentially penalised
+  because they imply many mutations and risk of saturation (multiple hits at
+  the same site obscure the true evolutionary distance). λ = {lam:.0f} means the
+  prior expected branch length is 1/λ = {1/lam:.2f}.
+─────────────────────────────────────────────────────────────────────────────
+""")
+
+# ==========================================================
+# STEP 6 — FELSENSTEIN FOR H1
+# ==========================================================
+section("STEP 6 — FELSENSTEIN PRUNING: COMPUTING F_H1  (site-by-site trace)")
+
+F_left  = encoded[chosen_left]
+F_right = encoded[chosen_right]
+
+print(f"[DETERMINISTIC] Left child  ({chosen_left}) one-hot matrix F_S1:\n{F_left}")
+print(f"\n[DETERMINISTIC] Right child ({chosen_right}) one-hot matrix F_S2:\n{F_right}")
+
+F_H1 = felsenstein_merge_step(
+    F_left, F_right, P1, P2,
+    verbose=True,
+    left_name=chosen_left, right_name=chosen_right, parent_name="H1"
+)
+
+print("─" * 80)
+print(f"\n[DETERMINISTIC] F_H1 — complete Felsenstein partial likelihood matrix for ancestor H1:")
+print(f"  Shape: {F_H1.shape}  (rows=sites, cols=states {{A,C,G,T}})")
+print(np.round(F_H1, 4))
+
+print(f"""
+Biological interpretation of F_H1: each entry F_H1[site, state] gives the
+probability that ancestor H1 has nucleotide 'state' at 'site', given the
+observed sequences of {chosen_left} and {chosen_right} below H1.
+
+  Example: F_H1[0, A] = {F_H1[0,0]:.4f}
+    → The probability that site 1 has state A at ancestor H1, given that
+      {chosen_left} shows A and {chosen_right} shows A at site 1, integrated over
+      all evolutionary paths along the two branches (t1={t1:.3f}, t2={t2:.3f}).
+
+These are partial likelihoods (not marginals) because they will be multiplied
+by further transition probabilities as we continue merging nodes toward the
+root.
+""")
+
+# Collect branch lengths for prior computation
+branch_lengths = [t1, t2]
+
+# ==========================================================
+# STEP 7 — SECOND MERGE: H1 + S4 → U
+# ==========================================================
+section("STEP 7 — SECOND MERGE: merge(H1, S4)  [ST1 → ST2]  (site-by-site trace)")
+
+print("""
+STATE TRANSITION:
+  ST1 = { H1, S3, S4 }   (3 disjoint trees after first merge)
+  Action: merge(H1, S4)
+  ST2 = { U,  S3 }       (2 disjoint trees after second merge)
+
+  H1 is not a DNA string. H1 is the (4-site × 4-state) Felsenstein likelihood
+  matrix F_H1 computed in Step 6. It is flattened to a 16-dimensional vector,
+  projected to 128 dimensions by seq_emb, and fed to the EdgeMLP exactly as
+  a leaf sequence would be. This is how PhyloGFN handles internal nodes
+  uniformly within the same architecture.
+""")
+
+# e_H1 is deterministic (computed from F_H1 via a fixed linear projection)
+y_H1  = torch.tensor(F_H1.flatten(), dtype=torch.float32)
+e_H1  = seq_emb(y_H1)          # [DETERMINISTIC] given fixed seq_emb weights
+e_S4  = e_dict["S4"]           # [SIMULATED] from Transformer
+
+# The summary token for ST1 would come from a fresh Transformer pass over ST1.
+# We simulate it here because we have not built a full recurrent state encoder.
+e_s_st1 = torch.randn(128)     # [SIMULATED] fresh summary for ST1
+
+edge_mlp_input_st1 = torch.cat([e_s_st1, e_H1, e_S4], dim=0).unsqueeze(0)
+
+with torch.no_grad():
+    edge_logits_st1 = edge_model(edge_mlp_input_st1).squeeze()
+    edge_probs_st1  = F.softmax(edge_logits_st1, dim=0)
+
+sampled_bin_st1 = torch.multinomial(edge_probs_st1, 1).item()
+t_H1 = (sampled_bin_st1 // 50 + 1) * 0.01
+t_S4 = (sampled_bin_st1  % 50 + 1) * 0.01
+
+print(f"[SIMULATED] Branch lengths: t_H1 = {t_H1:.3f} (H1→U)   t_S4 = {t_S4:.3f} (S4→U)")
+
+P_H1 = expm(Q * t_H1)
+P_S4 = expm(Q * t_S4)
+F_S4 = encoded["S4"]
+
+print(f"\n[DETERMINISTIC] P(t_H1={t_H1:.3f})[A,A] = {P_H1[0,0]:.4f}  "
+      f"→ {P_H1[0,0]*100:.1f}% chance A stays A on H1→U branch")
+print(f"[DETERMINISTIC] P(t_S4={t_S4:.3f})[A,A] = {P_S4[0,0]:.4f}  "
+      f"→ {P_S4[0,0]*100:.1f}% chance A stays A on S4→U branch")
+
+F_U = felsenstein_merge_step(
+    F_H1, F_S4, P_H1, P_S4,
+    verbose=True,
+    left_name="H1", right_name="S4", parent_name="U"
+)
+
+branch_lengths += [t_H1, t_S4]
+
+print("─" * 80)
+print(f"\n[DETERMINISTIC] F_U — complete Felsenstein partial likelihood matrix for ancestor U:")
+print(f"  Shape: {F_U.shape}  (rows=sites, cols=states {{A,C,G,T}})")
+print(np.round(F_U, 4))
+
+print(f"""
+Biological interpretation of F_U: F_U[site, state] gives the probability
+that ancestor U has nucleotide 'state' at 'site', given all observed sequences
+below U (S1 and S2 via H1, and S4 directly).
+
+  Example: F_U[0, A] = {F_U[0,0]:.4f}
+    → The probability that site 1 has state A at ancestor U,
+      given S1=A, S2=A, S4=A at site 1.
+
+F_U will be used in the next merge step (U with S3 → final root), continuing
+the bottom-up Felsenstein pruning toward the root.
+""")
+
+# ==========================================================
+# STEP 8 — THIRD MERGE: U + S3 → ROOT  (final merge)
+# ==========================================================
+section("STEP 8 — THIRD MERGE: merge(U, S3) → ROOT  [ST2 → TERMINAL STATE]")
+
+print("""
+STATE TRANSITION:
+  ST2 = { U, S3 }    (2 disjoint trees)
+  Action: merge(U, S3)   — the only action available; no sampling needed.
+  ST3 = { ROOT }     (terminal state — a single complete tree)
+
+This is the final Felsenstein step. After it we have the root partial
+likelihood matrix F_ROOT, which is used directly to compute the tree
+likelihood P(Y | z, b) and the reward R(z, b).
+""")
+
+# Embed U similarly to H1
+y_U  = torch.tensor(F_U.flatten(), dtype=torch.float32)
+e_U  = seq_emb(y_U)            # [DETERMINISTIC] given fixed seq_emb weights
+e_S3 = e_dict["S3"]            # [SIMULATED]
+
+e_s_st2 = torch.randn(128)     # [SIMULATED] summary for ST2
+edge_mlp_input_st2 = torch.cat([e_s_st2, e_U, e_S3], dim=0).unsqueeze(0)
+
+with torch.no_grad():
+    edge_logits_st2 = edge_model(edge_mlp_input_st2).squeeze()
+    edge_probs_st2  = F.softmax(edge_logits_st2, dim=0)
+
+sampled_bin_st2 = torch.multinomial(edge_probs_st2, 1).item()
+t_U  = (sampled_bin_st2 // 50 + 1) * 0.01
+t_S3 = (sampled_bin_st2  % 50 + 1) * 0.01
+
+print(f"[SIMULATED] Branch lengths: t_U = {t_U:.3f} (U→ROOT)   t_S3 = {t_S3:.3f} (S3→ROOT)")
+
+P_U  = expm(Q * t_U)
+P_S3 = expm(Q * t_S3)
+F_S3 = encoded["S3"]
+
+F_ROOT = felsenstein_merge_step(
+    F_U, F_S3, P_U, P_S3,
+    verbose=True,
+    left_name="U", right_name="S3", parent_name="ROOT"
+)
+
+branch_lengths += [t_U, t_S3]
+
+print("─" * 80)
+print(f"\n[DETERMINISTIC] F_ROOT — Felsenstein partial likelihood at the root:")
+print(f"  Shape: {F_ROOT.shape}  (rows=sites, cols=states {{A,C,G,T}})")
+print(np.round(F_ROOT, 4))
+
+# ==========================================================
+# STEP 9 — REWARD COMPUTATION  R(z, b) = P(Y|z,b) · P(b)
+# ==========================================================
+section("STEP 9 — REWARD COMPUTATION: R(z,b) = P(Y|z,b) · P(b)")
+
+print("""
+─────────────────────────────────────────────────────────────────────────────
+[DETERMINISTIC] TREE LIKELIHOOD: P(Y | z, b)
+─────────────────────────────────────────────────────────────────────────────
+
+Under the Jukes-Cantor model, the stationary distribution is uniform:
+  π(A) = π(C) = π(G) = π(T) = 0.25
+
+The site likelihood for site k is:
+
+  L_k = Σ_{c ∈ {A,C,G,T}}  π(c) · F_ROOT[k, c]
+
+This marginalises over the unknown root state by weighting each state by its
+stationary probability. The overall tree likelihood is the product across all
+m sites (assuming independence):
+
+  P(Y | z, b) = ∏_{k=1}^{m}  L_k
+""")
+
+pi = np.array([0.25, 0.25, 0.25, 0.25])   # uniform stationary distribution (JC)
+n_sites = F_ROOT.shape[0]
+
+site_likelihoods = np.zeros(n_sites)
+for k in range(n_sites):
+    site_likelihoods[k] = np.sum(pi * F_ROOT[k, :])
+    print(f"  [DETERMINISTIC] L_{k+1} = Σ_c π(c)·F_ROOT[{k+1},c] "
+          f"= 0.25 × {np.round(F_ROOT[k,:],6)} "
+          f"= {site_likelihoods[k]:.8f}")
+
+tree_likelihood = np.prod(site_likelihoods)
+log_tree_likelihood = np.sum(np.log(site_likelihoods))
+
+print(f"""
+[DETERMINISTIC] P(Y | z, b) = L_1 × L_2 × L_3 × L_4
+              = {' × '.join(f'{v:.6f}' for v in site_likelihoods)}
+              = {tree_likelihood:.10e}
+
+[DETERMINISTIC] log P(Y | z, b) = {log_tree_likelihood:.6f}
+  (Log-space is preferred numerically to avoid floating-point underflow.)
+""")
+
+print("""
+─────────────────────────────────────────────────────────────────────────────
+[DETERMINISTIC] BRANCH LENGTH PRIOR: P(b)
+─────────────────────────────────────────────────────────────────────────────
+
+Each branch length t_k is assigned an independent Exponential(λ=10) prior:
+
+  P(b) = ∏_k  λ · exp(−λ · t_k)
+""")
+
+lam = 10.0
+log_prior = 0.0
+for idx, t_k in enumerate(branch_lengths):
+    lp_k = np.log(lam) - lam * t_k
+    log_prior += lp_k
+    print(f"  [DETERMINISTIC] Branch {idx+1}: t={t_k:.3f}  "
+          f"log[λ·exp(−λt)] = log({lam:.0f}) − {lam:.0f}×{t_k:.3f} = {lp_k:.6f}")
+
+prior = np.exp(log_prior)
+print(f"""
+[DETERMINISTIC] log P(b) = {log_prior:.6f}
+[DETERMINISTIC] P(b)     = {prior:.10e}
+""")
+
+print("""
+─────────────────────────────────────────────────────────────────────────────
+[DETERMINISTIC] FINAL REWARD: R(z, b) = P(Y | z, b) · P(b)
+─────────────────────────────────────────────────────────────────────────────
+
+The GFlowNet reward is defined as:
+
+  R(z, b) = P(Y | z, b) · P(b)
+
+In log-space (numerically stable):
+
+  log R(z, b) = log P(Y | z, b) + log P(b)
+""")
+
+log_reward = log_tree_likelihood + log_prior
+reward     = np.exp(log_reward)
+
+print(f"  [DETERMINISTIC] log P(Y|z,b)  = {log_tree_likelihood:.6f}")
+print(f"  [DETERMINISTIC] log P(b)      = {log_prior:.6f}")
+print(f"  [DETERMINISTIC] log R(z,b)    = {log_reward:.6f}")
+print(f"  [DETERMINISTIC] R(z,b)        = {reward:.6e}")
+print(f"""
+Interpretation: R(z,b) = {reward:.4e} is the unnormalised posterior weight
+assigned to this particular tree topology z and set of branch lengths b. A
+higher R means this tree better explains the observed sequences (high
+likelihood) while also satisfying the prior on branch lengths (not too long).
+
+During GFlowNet training, the Trajectory Balance (TB) loss drives the forward
+policy P_F to generate trees with frequency proportional to R(z,b), so that
+after training the model approximates the Bayesian posterior P(z,b|Y) ∝ R(z,b).
+""")
+
+print("✓ VERIFICATION — all reward components are positive:")
+print(f"  P(Y|z,b) > 0 : {tree_likelihood > 0}")
+print(f"  P(b)     > 0 : {prior > 0}")
+print(f"  R(z,b)   > 0 : {reward > 0}")
+
+# ==========================================================
+# FINAL CONCEPTUAL MAP SUMMARY
+# ==========================================================
+section("FINAL CONCEPTUAL MAP SUMMARY: FROM BIOLOGY TO FINAL TREE")
+
+print("""
+Step 1
+
+DNA
+
+↓
+
+One-Hot Encoding
+
+Each DNA sequence
+
+is changed
+
+into a matrix.
+
+This matrix
+
+is the first
+
+Felsenstein likelihood.
+
+
+Step 2
+
+One-Hot
+
+↓
+
+Transformer Embeddings
+
+Each matrix
+
+is changed
+
+into a
+
+16-dimensional vector.
+
+seq_emb changes it
+
+into a
+
+128-dimensional vector.
+
+The Transformer
+
+creates:
 
 • e_s
 
-  indices 0–127
+  a global vector
 
-  128 features
+  for the whole state.
 
-  It is the global
-  summary vector.
+• e_S1, e_S2,
 
-  It contains
-  information about
-  the whole state ST0.
+  e_S3, e_S4
 
+  one vector
 
-• e_i + e_j
-
-  indices 128–255
-
-  128 features
-
-  It is the sum
-
-  of the two
-  candidate tree
-  embeddings.
-
-  We use the sum
-
-  so that
-
-  merge(S1,S2)
-
-  is the same as
-
-  merge(S2,S1).
+  for each tree.
 
 
-Total:
+Step 3
 
-128 + 128
+Embeddings
 
-=
+↓
 
-256 features
+G_ij
+
+G_ij = [e_s ; e_i + e_j]
+
+The first part
+
+contains
+
+global information.
+
+The second part
+
+contains
+
+the two candidate trees.
 
 
-There are
+Step 4
 
-6 possible G_ij vectors.
+G_ij
 
-They are stacked
+↓
 
-into one
-
-(6,256) batch.
+Forward Policy
 
 SAMlp gives
 
@@ -334,446 +1140,201 @@ for each G_ij.
 
 Softmax changes
 
-the 6 logits
-
-into
-
-P_F(a | ST0).
-""")
-
-embedding_size = 128
-input_size     = 16      # 4 sites × 4 DNA states (flattened one-hot)
-
-seq_emb       = nn.Linear(input_size, embedding_size, bias=False)
-encoder_layer = nn.TransformerEncoderLayer(d_model=embedding_size, nhead=4, batch_first=True)
-transformer   = nn.TransformerEncoder(encoder_layer, num_layers=1)
-
-# Build transformer input: [summary_slot | e_S1 | e_S2 | e_S3 | e_S4]
-# h_s is a learnable summary query; here it is randomly initialised ([SIMULATED]).
-tree_embeddings_list = []
-for name in ST0:
-    y_i = torch.tensor(encoded[name].flatten(), dtype=torch.float32)
-    tree_embeddings_list.append(seq_emb(y_i))
+the logits
 
-encoded_trees   = torch.stack(tree_embeddings_list).unsqueeze(0)   # (1, 4, 128)
-h_s             = torch.randn(1, 1, embedding_size)                # [SIMULATED] summary query
-transformer_input = torch.cat([h_s, encoded_trees], dim=1)         # (1, 5, 128)
+into probabilities.
 
-with torch.no_grad():
-    transformer_output = transformer(transformer_input)            # (1, 5, 128)
+One action
 
-summary_token = transformer_output[0, 0, :]       # e_s : (128,)
-e_dict = {
-    "S1": transformer_output[0, 1, :],
-    "S2": transformer_output[0, 2, :],
-    "S3": transformer_output[0, 3, :],
-    "S4": transformer_output[0, 4, :],
-}
+is sampled.
 
-# Build the (6, 256) G_ij batch — ALWAYS global first, local second (paper convention)
-g_tensors = []
-for (a, b) in actions:
-    e_local = e_dict[a] + e_dict[b]                          # permutation-invariant sum
-    g_ij    = torch.cat([summary_token, e_local], dim=0)     # [global(128) ; local(128)]
-    g_tensors.append(g_ij)
 
-g_batch = torch.stack(g_tensors)    # (6, 256)
-print("""
-IMPORTANT NOTE ABOUT THE NUMBERS BELOW
+Step 5
 
-The following tensor contains 256 learned latent features.
+Chosen Action
 
-Indices 0–127:
-Global state representation e_s.
+↓
 
-Indices 128–255:
-Local candidate-pair representation e_S1 + e_S2.
+EdgeMLP
 
-The numbers do not have a direct biological meaning.
-The neural network uses the whole 256-dimensional vector.
-SAMlp takes this vector and gives one score for the candidate merge.
-This tensor is printed only to show the structure of G_ij. 
-It also shows that the code follows the mathematical formula:
+EdgeMLP uses
 
-G_ij = [e_s ; e_i + e_j]
-""")
-# Show ONE canonical example with full decomposition proof
-G_S1S2 = g_batch[0]
-explain_tensor(
-    "G_S1S2 — canonical feature vector for action merge(S1, S2)",
-    G_S1S2,
-    "256-D vector: indices 0–127 = e_s (global state), indices 128–255 = e_S1 + e_S2 (local pair).",
-    "Formula: G_ij = [e_s ; e_i + e_j]. One such vector exists for each of the 6 candidate actions."
-)
+e_s,
 
-print("\n[VERIFYING THE FEATURE DECOMPOSITION FOR G_S1S2]")
-print(f"  Total dimension == 256?                   -> {len(G_S1S2) == 256}")
-print(f"  Indices   0–127 match e_s exactly?        -> {torch.equal(G_S1S2[:128], summary_token)}")
-print(f"  Indices 128–255 match e_S1 + e_S2 exactly?-> {torch.equal(G_S1S2[128:], e_dict['S1'] + e_dict['S2'])}")
+e_i,
 
-# ==========================================================
-# EXPLANATION — FORWARD POLICY & THE "WHY"
-# ==========================================================
-section("EXPLANATION — FORWARD POLICY & THE 'WHY'")
-print("""
-3. Forward Policy vs. Random Actions
+and e_j.
 
-• Learned P_F
+It samples
 
-  SAMlp gives one score
-  to each G_ij.
+two branch lengths:
 
-  Softmax changes
-  the 6 scores into
-  probabilities.
+t1 and t2.
 
-  The model samples
-  one action from
-  these probabilities.
 
-  It does not always
-  choose the highest score.
+Step 6
 
-• Random Actions
+Branch Lengths
 
-  During training,
+↓
 
-  the model sometimes
-  chooses a random action.
+Transition Matrices
 
-  This helps the model
-  explore more trees
-  and find better solutions.
+P(t) = exp(Q·t)
 
+using
 
-4. Why GFlowNet?
-
-There are too many
-possible trees.
+the Jukes-Cantor model.
 
-It is not possible
-to check every tree.
 
-GFlowNet learns to
-generate trees
-with probability
-based on their reward
+Step 7
 
-R(z,b) = P(Y|z,b) · P(b)
+Transition Matrices
 
-Trees with higher reward
-are generated more often.
+↓
 
-This helps the model
-find many good trees.
+Felsenstein Likelihood
 
-These trees are useful
+Equation 1
 
-for branch support
+computes
 
-and confidence intervals.
-""")
+the new parent
 
-# ==========================================================
-# STEP 4 — LOGITS, SOFTMAX, AND GFLOWNET SAMPLING
-# ==========================================================
-section("STEP 4 — ACTION SCORING & GFLOWNET SAMPLING")
+likelihood.
 
-logits_head = SAMlp(in_features=256, hidden_features=256, out_features=1)
+The new parent
 
-with torch.no_grad():
-    logits        = logits_head(g_batch).squeeze(-1)   # (6,)
-    probabilities = F.softmax(logits, dim=0)           # (6,)  sums to 1
-
-print("\n[Action → Forward Probability P_F(a | ST0)]")
-for idx, (a, b) in enumerate(actions):
-    print(f"  P_F(merge({a}, {b})) = {probabilities[idx].item()*100:.2f}%"
-          f"  (logit: {logits[idx].item():.4f})")
-
-# Stochastic sampling proportional to P_F  ([SIMULATED] because weights are untrained)
-sampled_idx  = torch.multinomial(probabilities, num_samples=1).item()
-chosen_left, chosen_right = actions[sampled_idx]
-
-print(f"\n{'='*80}")
-print(f"[SIMULATED] SAMPLED ACTION: merge({chosen_left}, {chosen_right})")
-print(f"{'='*80}")
-print(f"State transition: ST0 → ST1")
-print(f"  The environment merges sequence {chosen_left} and sequence {chosen_right}.")
-print(f"  A new internal ancestral node H1 replaces them; ST1 now has 3 disjoint trees.")
-
-# ==========================================================
-# EXPLANATION — EVOLUTIONARY MODELS & FELSENSTEIN PRUNING
-# ==========================================================
-section("EXPLANATION — EVOLUTIONARY MODELS & FELSENSTEIN PRUNING")
-print("""
-1. Jukes-Cantor (JC) Model
-   Instantaneous rate matrix Q (4×4): off-diagonal = 1/3, diagonal = −1.
-   Governs: dP(t)/dt = Q · P(t).
+replaces
 
-2. Transition Matrices
-   Branch length t = evolutionary distance. P(t) = exp(Q·t) via matrix exponentiation.
-   In efficient code this uses spectral decomposition: exp(Qt) = U · exp(Dt) · U⁻¹.
+its two children.
 
-3. Exponential Prior on Branch Lengths
-   P(t) = λ · exp(−λ·t) with λ=10. Biologically, this penalises unrealistically long
-   branches (saturation) and acts as a regulariser during training.
 
-4. Felsenstein Pruning Algorithm (Equation 1)
-   For internal node u with children v, w:
-     F_u[i, a_u] = [Σ_{a_v} P(a_v|a_u, t_v) · F_v[i, a_v]]
-                 × [Σ_{a_w} P(a_w|a_u, t_w) · F_w[i, a_w]]
-   'Partial' because it conditions on a specific state a_u at node u.""")
+Step 8
 
-# ==========================================================
-# QUESTION 2A — EDGE MLP SAMPLING & H1 FELSENSTEIN MATRIX
-# ==========================================================
-section("QUESTION 2A — SAMPLING BRANCH LENGTHS & COMPUTING H1 LIKELIHOOD")
+Terminal State
 
-print(f"\nChosen merge: ({chosen_left}, {chosen_right})  →  new node H1")
-print("""
-Branch lengths are NOT hardcoded. Here is the full EdgeMLP sampling chain:
+↓
 
-  Step A: Concatenate [e_s (128-D) || e_left (128-D) || e_right (128-D)] → 384-D input.
-  Step B: EdgeMLP maps 384-D → 2500 logits (a 50×50 joint bin grid for t1 and t2).
-  Step C: Softmax → probability distribution over 2500 bins.
-  Step D: torch.multinomial samples one bin index  [SIMULATED].
-  Step E: Decode:  t1 = (bin_index // 50 + 1) × 0.01
-                   t2 = (bin_index  % 50 + 1) × 0.01
-          This gives branch lengths in the range [0.01, 0.50].
-""")
+Root Likelihood
 
-# Build EdgeMLP input for ST0 → ST1 transition
-edge_mlp_input = torch.cat([
-    summary_token,
-    e_dict[chosen_left],
-    e_dict[chosen_right]
-], dim=0).unsqueeze(0)            # (1, 384)
+After n−1 merges,
 
-print(f"EdgeMLP input shape: {edge_mlp_input.shape}  "
-      f"= [e_s(128) || e_{chosen_left}(128) || e_{chosen_right}(128)]")
+only one root
 
-edge_model = EdgeMLP()
+remains.
 
-with torch.no_grad():
-    edge_logits = edge_model(edge_mlp_input).squeeze()   # (2500,)  [SIMULATED]
-    edge_probs  = F.softmax(edge_logits, dim=0)
+Its likelihood
 
-sampled_bin = torch.multinomial(edge_probs, 1).item()    # [SIMULATED]
-t1 = (sampled_bin // 50 + 1) * 0.01
-t2 = (sampled_bin  % 50 + 1) * 0.01
+is
 
-print(f"\n[SIMULATED] EdgeMLP output → sampled bin index : {sampled_bin}")
-print(f"[SIMULATED] Decoded branch lengths : t1 = {t1:.3f}  (branch to {chosen_left})")
-print(f"[SIMULATED]                          t2 = {t2:.3f}  (branch to {chosen_right})")
+P(Y | z,b).
 
-# Jukes-Cantor transition matrices
-Q  = jc_Q()
-P1 = expm(Q * t1)
-P2 = expm(Q * t2)
 
-print(f"\nJukes-Cantor rate matrix Q (4×4):\n{np.round(Q, 4)}")
-print(f"\nTransition matrix P(t1={t1:.3f}) = exp(Q·t1):\n{np.round(P1, 4)}")
-print(f"\nTransition matrix P(t2={t2:.3f}) = exp(Q·t2):\n{np.round(P2, 4)}")
+Step 9
 
-# Felsenstein recursion
-F_left  = encoded[chosen_left]
-F_right = encoded[chosen_right]
-F_H1    = felsenstein_merge_step(F_left, F_right, P1, P2)
+Reward
 
-explain_tensor(
-    "F_H1 — Felsenstein partial likelihood for ancestral node H1",
-    np.round(F_H1, 4),
-    f"H1 is the new ancestor of {chosen_left} and {chosen_right}.",
-    "Each entry F_H1[site, state] = probability that site has 'state' at H1 given the "
-    "observed leaves below. Computed via Equation 1 (Felsenstein recursion)."
-)
+Reward
 
-# ==========================================================
-# QUESTION 2B — NEXT TRANSITION: merge(H1, S4)  →  ST1 → ST2
-# ==========================================================
-section("QUESTION 2B — NEXT TRANSITION: MERGE(H1, S4)")
+is
 
-print("""
-State ST1 contains three disjoint trees: H1, S2/S3 (whichever was not chosen), and the
-remaining leaf.In this example, we now merge H1 and S4.
+R(z,b)
 
-So the next action is:
+=
 
-merge(H1, S4).
+P(Y | z,b)
 
-The steps are the same
-as in Question 2A.
+×
 
-The difference is:
+P(b)
 
-The left child is H1,
-not a leaf sequence.
+The reward
 
-H1 is an internal node.
+is used
 
-Its Felsenstein likelihood
-F_H1 was already computed.
+to update
 
-Now we use F_H1
-instead of a leaf
-to compute the next parent node.
+the model.
 
-We already have F_H1.
 
-First, F_H1 is changed
-into one long vector.
+Step 10
 
-Then this vector
-goes through seq_emb.
+Trained GFlowNet
 
-seq_emb is the same
-linear layer used
-for the leaf sequences.
+↓
 
-The result is e_H1.
+Final Tree
 
-Now H1 has an embedding
-like the other trees.
+After training,
 
-The Transformer can use H1
-again as part of the
-current state.
+the model
 
-In a real trained model, the Transformer would be re-run on ST1 to obtain a fresh
-summary token. Here we use torch.randn to simulate that token  [SIMULATED].
-""")
+generates
 
-# Embed H1 via the same seq_emb projection (F_H1 is (4,4), flatten to 16-D)
-y_H1  = torch.tensor(F_H1.flatten(), dtype=torch.float32)   # (16,)
-e_H1  = seq_emb(y_H1)                                       # (128,) — deterministic given F_H1
-e_S4  = e_dict["S4"]
+many trees.
 
-# [SIMULATED] fresh summary token for ST1 (would require re-running Transformer)
-e_s_st1 = torch.randn(128)    # [SIMULATED]
+Trees with
 
-edge_mlp_input_st1 = torch.cat([e_s_st1, e_H1, e_S4], dim=0).unsqueeze(0)  # (1, 384)
-print(f"EdgeMLP input shape for ST1 → ST2 transition: {edge_mlp_input_st1.shape}")
+higher reward
 
-with torch.no_grad():
-    edge_logits_st1 = edge_model(edge_mlp_input_st1).squeeze()   # [SIMULATED]
-    edge_probs_st1  = F.softmax(edge_logits_st1, dim=0)
+are generated
 
-sampled_bin_st1 = torch.multinomial(edge_probs_st1, 1).item()    # [SIMULATED]
-t_H1 = (sampled_bin_st1 // 50 + 1) * 0.01
-t_S4 = (sampled_bin_st1  % 50 + 1) * 0.01
+more often.
 
-print(f"\n[SIMULATED] Sampled bin index : {sampled_bin_st1}")
-print(f"[SIMULATED] Branch lengths    : t_H1 = {t_H1:.3f}  (branch H1 → U)")
-print(f"[SIMULATED]                     t_S4 = {t_S4:.3f}  (branch S4 → U)")
+The final result
 
-P_H1 = expm(Q * t_H1)
-P_S4 = expm(Q * t_S4)
-F_S4 = encoded["S4"]
-F_U  = felsenstein_merge_step(F_H1, F_S4, P_H1, P_S4)
+is an
 
-explain_tensor(
-    "F_U — Felsenstein partial likelihood for ancestor U = merge(H1, S4)",
-    np.round(F_U, 4),
-    "H1 and S4 are joined to make a new ancestor U.",
-    "Equation 1 uses F_H1 and F_S4 with their transition matrices to compute F_U. "
-    "This continues the Felsenstein calculation and moves one step closer to the root."
-)
-# ==========================================================
-# FINAL CONCEPTUAL MAP SUMMARY
-# ==========================================================
-section("FINAL CONCEPTUAL MAP SUMMARY: FROM BIOLOGY TO FINAL TREE")
-print("""
-Step 1  Biological Sequences → One-Hot Encoding
-        Raw DNA (Σ={A,C,G,T}) is converted to binary indicator matrices F_leaf ∈ {0,1}^(m×4).
+unrooted
 
-Step 2  One-Hot Leaves → Transformer Embeddings
-        Each leaf is first
-changed into one
-16-dimensional vector.
-
-seq_emb changes
-this vector into
-a 128-dimensional vector.
-
-Then all leaf vectors
-go into the
-Transformer Encoder.
-
-The Transformer
-creates:
-
-• e_s
-  A 128-dimensional
-  global summary vector.
-
-  It contains information
-  about the whole state ST0.
-
-• e_S1, e_S2,
-  e_S3, e_S4
-
-  These are
-  128-dimensional vectors.
-
-  Each one represents
-  one tree.
-
-Step 3  Embeddings → G_ij Feature Vectors
-        For each candidate pair (i,j): G_ij = [e_s ; e_i + e_j]  ∈ R^256.
-        The global part captures context; the local part is permutation-invariant.
-
-Step 4  G_ij → Action Sampling via Forward Policy P_F
-        SAMlp maps each G_ij → scalar logit l_ij.
-        Softmax(logits) → P_F(a | ST). One action is sampled ∝ P_F.
-
-Step 5  Chosen Action → Branch Lengths via EdgeMLP
-        EdgeMLP(e_s || e_i || e_j) → 2500 bin logits → multinomial sample → (t1, t2).
-
-Step 6  Branch Lengths → Transition Matrices
-        P(t) = exp(Q·t)  under the Jukes-Cantor model.
-
-Step 7  Transition Matrices → Felsenstein Likelihood (Equation 1)
-        F_parent[site, a_u] = [Σ P(a_v|a_u,t1)·F_left[site,a_v]]
-                             × [Σ P(a_w|a_u,t2)·F_right[site,a_w]]
-        The new ancestor's likelihood replaces its children in the next state.
-
-Step 8  Terminal State → Reward
-        After n−1 merges, one tree remains. The reward is:
-          R(z,b) = P(Y|z,b) · P(b)
-        where P(Y|z,b) = product over sites of root likelihood summed over root states,
-        and P(b) = ∏ λ·exp(−λ·t_k) is the exponential prior on all branch lengths.
-        The Trajectory Balance (TB) loss uses R to update all network weights.
-
-Step 9  Reward → Proportional Tree Generation
-      After training,
-
-the GFlowNet can
-generate many trees.
-
-Each tree has
-
-• a topology z
-• branch lengths b
-
-Trees with a higher
-reward R(z,b)
-
-have a higher chance
-to be generated.
-
-The final tree
-is first rooted.
-
-Then the root
-is removed
-
-because the
-Jukes-Cantor model
-is time-reversible.
-
-The result is
-
-an unrooted
 bifurcating
+
 phylogenetic tree.
+""")
+# ==========================================================
+# MAIN IDEA OF THIS CODE
+# ==========================================================
+section("MAIN IDEA OF THIS CODE")
+
+print("""
+The main idea is simple.
+
+First,
+
+DNA is changed
+
+into vectors.
+
+Then,
+
+GFlowNet chooses
+
+which two trees
+
+to merge.
+
+After that,
+
+EdgeMLP gives
+
+the branch lengths.
+
+Then,
+
+Felsenstein calculates
+
+the tree likelihood.
+
+Finally,
+
+the reward is computed.
+
+The model learns
+
+to generate trees
+
+with higher probability
+
+more often.
 """)
