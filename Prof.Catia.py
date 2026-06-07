@@ -93,20 +93,18 @@ class EdgeMLP(nn.Module):
 # ==========================================================
 # IMPORTANT LIMITATION OF THIS DEMONSTRATION
 # ==========================================================
-section("IMPORTANT LIMITATION OF THIS DEMONSTRATION")
+```python
+section("IMPORTANT NOTE")
 print("""
-The original trained PhyloGFN checkpoint is not publicly available and is therefore
-not loaded in this script.
+No trained PhyloGFN model is used in this demo.
 
-Consequently, all Transformer outputs, SAMlp logits, EdgeMLP outputs, sampled
-actions, and sampled branch lengths are generated using randomly initialised
-(untrained) network parameters.
+All Transformer outputs, logits, sampled actions, and branch lengths
+are [SIMULATED] with random values.
 
-The purpose of this script is NOT to reproduce the numerical predictions of the
-published model.
-
-Its purpose is to demonstrate the computational pipeline and mathematical
-operations described in the PhyloGFN paper:
+This script shows how PhyloGFN works and follows the steps and equations
+from the paper. It is not made to reproduce the paper's final numerical
+results.
+""")
 
 DNA
 → Embedding
