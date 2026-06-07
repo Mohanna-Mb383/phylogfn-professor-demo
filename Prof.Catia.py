@@ -117,10 +117,7 @@ DNA
 → Felsenstein Likelihood
 → Reward Computation
 
-Therefore, the architecture, tensor dimensions, mathematical equations,
-and information flow are faithful to the paper, while the numerical values
-produced by the neural networks should be interpreted as illustrative
-[SIMULATED] examples only.
+Therefore, the model structure, tensor sizes, mathematical equations, and data flow follow the paper, while the neural network values are only [SIMULATED] examples.
 """)
 
 # ==========================================================
